@@ -11,6 +11,8 @@ from .exceptions import ActionNotSupportedError, CommandError, ConnectError
 from .mappings.base import RESTMappingConfig
 from .models import DeviceInfo, VacuumEvent, VacuumMode, VacuumStatus
 
+REST_REQUEST_TIMEOUT = 5.0
+
 
 class RESTVacuumClient:
     """Async HTTP/HTTPS client for local vacuum control via the REST API.
@@ -50,7 +52,10 @@ class RESTVacuumClient:
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(connector=self._make_connector())
+            self._session = aiohttp.ClientSession(
+                connector=self._make_connector(),
+                timeout=aiohttp.ClientTimeout(total=REST_REQUEST_TIMEOUT),
+            )
         return self._session
 
     async def close(self) -> None:

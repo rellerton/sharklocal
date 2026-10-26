@@ -12,7 +12,7 @@ import pytest
 from sharklocal.exceptions import ActionNotSupportedError, CommandError, ConnectError
 from sharklocal.mappings.base import RESTMappingConfig
 from sharklocal.models import DeviceInfo, VacuumEvent, VacuumMode, VacuumStatus
-from sharklocal.rest_client import RESTVacuumClient
+from sharklocal.rest_client import REST_REQUEST_TIMEOUT, RESTVacuumClient
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +115,19 @@ async def test_ssl_context_is_built_at_construction_not_in_the_event_loop(rest_m
         assert create.call_count == 1
     assert client._ssl_context.verify_mode == ssl.CERT_NONE
     await connector.close()
+
+
+async def test_session_has_bounded_request_timeout(rest_mapping):
+    """An unreachable REST endpoint must not block MQTT discovery forever."""
+    rest_mapping.transport = "http"
+    client = RESTVacuumClient("host", rest_mapping)
+
+    with patch("sharklocal.rest_client.aiohttp.ClientSession") as session_cls:
+        session_cls.return_value.closed = False
+        await client._get_session()
+
+    timeout = session_cls.call_args.kwargs["timeout"]
+    assert timeout.total == REST_REQUEST_TIMEOUT
 
 
 # ---------------------------------------------------------------------------

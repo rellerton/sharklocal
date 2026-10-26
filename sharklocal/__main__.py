@@ -356,6 +356,12 @@ def save_report(results: Dict[str, Any], save_report_arg: Any):
     print(f"\nReport saved to: {os.path.abspath(filename)}")
 
 def main():
+    # aiomqtt requires the selector event loop on Windows.  Python otherwise
+    # defaults to the proactor loop there, which fails before an MQTT probe can
+    # connect.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     parser = setup_argparse()
     args = parser.parse_args()
 

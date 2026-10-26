@@ -434,6 +434,19 @@ def test_main_probe_dispatch():
         mock_run.assert_called_once_with("1.2.3.4")
 
 
+def test_main_uses_selector_event_loop_on_windows():
+    """aiomqtt is incompatible with Windows' default proactor event loop."""
+    policy = MagicMock()
+    with patch("sys.platform", "win32"), \
+         patch("sys.argv", ["sharklocal", "1.2.3.4", "--probe"]), \
+         patch("sharklocal.__main__.asyncio.WindowsSelectorEventLoopPolicy", return_value=policy, create=True), \
+         patch("sharklocal.__main__.asyncio.set_event_loop_policy") as set_policy, \
+         patch("sharklocal.__main__.run_probe", new_callable=AsyncMock):
+        main()
+
+    set_policy.assert_called_once_with(policy)
+
+
 def test_main_save_report():
     """Test --save-report flag."""
     results = {"host": "1.2", "model": "M1", "rest": {}, "mqtt": {}, "fw": None}
