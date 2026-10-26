@@ -12,7 +12,7 @@ import pytest
 from sharklocal.exceptions import ActionNotSupportedError, CommandError, ConnectError
 from sharklocal.mappings.base import RESTMappingConfig
 from sharklocal.models import DeviceInfo, VacuumEvent, VacuumMode, VacuumStatus
-from sharklocal.rest_client import RESTVacuumClient
+from sharklocal.rest_client import REST_REQUEST_TIMEOUT, RESTVacuumClient
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +103,31 @@ async def test_make_connector_https_with_ssl_verify(rest_mapping):
     connector = client._make_connector()
     assert isinstance(connector, aiohttp.TCPConnector)
     await connector.close()
+
+
+async def test_ssl_context_is_built_at_construction_not_in_the_event_loop(rest_mapping):
+    rest_mapping.transport = "https"
+    rest_mapping.verify_ssl = False
+    with patch("sharklocal.rest_client.ssl.create_default_context", wraps=ssl.create_default_context) as create:
+        client = RESTVacuumClient("host", rest_mapping)
+        assert create.call_count == 1
+        connector = client._make_connector()
+        assert create.call_count == 1
+    assert client._ssl_context.verify_mode == ssl.CERT_NONE
+    await connector.close()
+
+
+async def test_session_has_bounded_request_timeout(rest_mapping):
+    """An unreachable REST endpoint must not block MQTT discovery forever."""
+    rest_mapping.transport = "http"
+    client = RESTVacuumClient("host", rest_mapping)
+
+    with patch("sharklocal.rest_client.aiohttp.ClientSession") as session_cls:
+        session_cls.return_value.closed = False
+        await client._get_session()
+
+    timeout = session_cls.call_args.kwargs["timeout"]
+    assert timeout.total == REST_REQUEST_TIMEOUT
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +227,30 @@ async def test_call_connect_error_on_connector_error(rest_mapping):
                         connection_key=MagicMock(), os_error=OSError("refused")
                     )
                 ),
+                __aexit__=AsyncMock(return_value=False),
+            )
+        )
+        mock_get.return_value = session
+        with pytest.raises(ConnectError):
+            await client.call("get_status")
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        aiohttp.ConnectionTimeoutError("Connection timeout to host"),
+        aiohttp.ServerDisconnectedError(),
+        TimeoutError(),
+    ],
+    ids=["connection-timeout", "server-disconnected", "total-timeout"],
+)
+async def test_call_connect_error_on_unreachable_host(rest_mapping, error):
+    client = RESTVacuumClient("host", rest_mapping)
+    with patch.object(client, "_get_session") as mock_get:
+        session = AsyncMock()
+        session.request = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(side_effect=error),
                 __aexit__=AsyncMock(return_value=False),
             )
         )

@@ -11,6 +11,8 @@ from .exceptions import ActionNotSupportedError, CommandError, ConnectError
 from .mappings.base import RESTMappingConfig
 from .models import DeviceInfo, VacuumEvent, VacuumMode, VacuumStatus
 
+REST_REQUEST_TIMEOUT = 5.0
+
 
 class RESTVacuumClient:
     """Async HTTP/HTTPS client for local vacuum control via the REST API.
@@ -24,6 +26,15 @@ class RESTVacuumClient:
         self.host = host
         self.mapping = mapping
         self._session: Optional[aiohttp.ClientSession] = None
+        # Building an SSL context reads the system certificate store, which is
+        # blocking I/O; doing it here keeps it out of the event loop for callers
+        # (Home Assistant) that construct clients in an executor.
+        self._ssl_context: Optional[ssl.SSLContext] = None
+        if mapping.transport != "http":
+            self._ssl_context = ssl.create_default_context()
+            if not mapping.verify_ssl:
+                self._ssl_context.check_hostname = False
+                self._ssl_context.verify_mode = ssl.CERT_NONE
 
     @property
     def base_url(self) -> str:
@@ -35,18 +46,16 @@ class RESTVacuumClient:
 
     def _make_connector(self) -> aiohttp.TCPConnector:
         """Build a ``TCPConnector`` with SSL settings from the mapping."""
-        if self.mapping.transport == "http":
+        if self._ssl_context is None:
             return aiohttp.TCPConnector()
-        if not self.mapping.verify_ssl:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            return aiohttp.TCPConnector(ssl=ctx)
-        return aiohttp.TCPConnector()
+        return aiohttp.TCPConnector(ssl=self._ssl_context)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(connector=self._make_connector())
+            self._session = aiohttp.ClientSession(
+                connector=self._make_connector(),
+                timeout=aiohttp.ClientTimeout(total=REST_REQUEST_TIMEOUT),
+            )
         return self._session
 
     async def close(self) -> None:
@@ -98,7 +107,11 @@ class RESTVacuumClient:
                 except Exception:
                     return True
 
-        except aiohttp.ClientConnectorError as exc:
+        except (aiohttp.ClientConnectionError, TimeoutError) as exc:
+            # Not just a refused connection: a robot that drops packets (seen
+            # during the nightly network restart) times out instead, and that
+            # is just as unreachable. Anything else escaping here skips the
+            # MQTT fallback and fails the caller's setup outright.
             raise ConnectError(
                 f"Cannot connect to vacuum at {self.host}:{self.mapping.port}"
             ) from exc
