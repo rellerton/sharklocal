@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch, mock_open
 
 import pytest
@@ -434,11 +435,11 @@ def test_main_probe_dispatch():
         mock_run.assert_called_once_with("1.2.3.4")
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows event loop only")
 def test_main_uses_selector_event_loop_on_windows():
     """aiomqtt is incompatible with Windows' default proactor event loop."""
     policy = MagicMock()
-    with patch("sys.platform", "win32"), \
-         patch("sys.argv", ["sharklocal", "1.2.3.4", "--probe"]), \
+    with patch("sys.argv", ["sharklocal", "1.2.3.4", "--probe"]), \
          patch("sharklocal.__main__.asyncio.WindowsSelectorEventLoopPolicy", return_value=policy, create=True), \
          patch("sharklocal.__main__.asyncio.set_event_loop_policy") as set_policy, \
          patch("sharklocal.__main__.run_probe", new_callable=AsyncMock):
