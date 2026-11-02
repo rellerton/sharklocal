@@ -568,6 +568,41 @@ async def test_start_monitoring_second_call_is_noop():
     await client.stop_monitoring()
 
 
+async def test_failed_monitor_is_consumed_and_can_be_restarted():
+    client = _make_vacuum_client_with_mocks()
+    client._status_callback = lambda s: None
+    client._mqtt.monitor = AsyncMock(side_effect=ConnectError("broker gone"))
+
+    with patch("sharklocal.client._LOGGER.warning") as warning:
+        await client.start_monitoring()
+        failed_task = client._monitor_task
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    assert failed_task is not None
+    assert failed_task.done()
+    warning.assert_called_once_with(
+        "MQTT monitor stopped for %s: %s",
+        "192.168.1.100",
+        failed_task.exception(),
+    )
+
+    monitor_gate = asyncio.Event()
+
+    async def monitor_until_released(*args, **kwargs):
+        await monitor_gate.wait()
+
+    client._mqtt.monitor = AsyncMock(side_effect=monitor_until_released)
+    await client.start_monitoring()
+
+    assert client._monitor_task is not failed_task
+    assert client._monitor_task is not None
+    assert not client._monitor_task.done()
+
+    monitor_gate.set()
+    await client.stop_monitoring()
+
+
 # ---------------------------------------------------------------------------
 # stop_monitoring()
 # ---------------------------------------------------------------------------
