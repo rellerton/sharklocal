@@ -286,6 +286,12 @@ def test_vacuum_map_defaults():
     assert vacuum_map.clean_time is None
 
 
+def test_vacuum_map_from_dict_rejects_placeholder_job_start():
+    data = VacuumMap(grid=_grid(), job_started=19).to_dict()
+
+    assert VacuumMap.from_dict(data).job_started is None
+
+
 def test_vacuum_map_robot_is_last_pose():
     poses = [MapPose(0.0, 0.0, 0.0), MapPose(1.0, 2.0, 3.1)]
     assert VacuumMap(grid=_grid(), poses=poses).robot == poses[-1]
