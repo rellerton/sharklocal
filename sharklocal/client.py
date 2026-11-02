@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -21,6 +22,9 @@ from .models import (
 from .mqtt_client import MQTTVacuumClient
 from .rest_client import RESTVacuumClient
 from .vacuum_map import encode_room_selection, encode_spot_selection
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 # On/off settings in the SharkIQ settings block (PbConfig), by field number,
@@ -416,6 +420,16 @@ class VacuumClient:
         self._monitor_task = asyncio.ensure_future(
             self._mqtt.monitor(self._on_monitor_status, stop_event=self._monitor_stop)
         )
+        self._monitor_task.add_done_callback(self._monitor_done)
+
+    def _monitor_done(self, task: asyncio.Task) -> None:
+        """Consume a stopped monitor's result so a later poll can re-arm it."""
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            return
+        except Exception as err:  # noqa: BLE001 - transport implementations vary
+            _LOGGER.warning("MQTT monitor stopped for %s: %s", self.host, err)
 
     async def _on_monitor_status(self, status: VacuumStatus) -> None:
         """Cache the latest status and persisted map, then forward to the callback."""
