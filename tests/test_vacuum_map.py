@@ -242,6 +242,13 @@ def test_decode_job_start_only():
     assert not hasattr(vacuum_map, "job_duration")
 
 
+def test_decode_rejects_placeholder_job_start():
+    stats = protobuf.encode_varint_field(1, 19)
+    fields = protobuf.encode_bytes_field(5, _grid_message()) + protobuf.encode_bytes_field(11, stats)
+
+    assert decode_map(_frame(fields)).job_started is None
+
+
 def test_decode_job_minutes_and_clean_time_without_a_log():
     stats = protobuf.encode_varint_field(1, 1790503168) + protobuf.encode_varint_field(2, 33)
     fields = protobuf.encode_bytes_field(5, _grid_message()) + protobuf.encode_bytes_field(11, stats)

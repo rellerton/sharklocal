@@ -34,6 +34,7 @@ from .models import (
     SPOT_ROOM_NAME,
     VacuumLogEntry,
     VacuumMap,
+    normalize_job_started,
 )
 
 # Top-level fields of a status frame that carry map data.
@@ -135,7 +136,7 @@ def decode_map(fields: Dict[int, List[Any]]) -> Optional[VacuumMap]:
     stats = _first(m, 11)
     if isinstance(stats, bytes):
         summary = _fields(stats)
-        vacuum_map.job_started = _first(summary, 1)
+        vacuum_map.job_started = normalize_job_started(_first(summary, 1))
         vacuum_map.job_minutes = _first(summary, 2)
 
     # Field 20.3.6 is the robot's event log as a JSON array of {key, time, code}.

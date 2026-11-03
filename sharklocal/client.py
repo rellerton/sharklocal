@@ -453,7 +453,10 @@ class VacuumClient:
             not vacuum_map.report
             and current is not None
             and current.report
-            and current.job_started == vacuum_map.job_started
+            and (
+                vacuum_map.job_started is None
+                or current.job_started == vacuum_map.job_started
+            )
         )
 
     async def stop_monitoring(self) -> None:

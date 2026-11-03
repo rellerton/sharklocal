@@ -851,7 +851,7 @@ async def test_on_monitor_status_forwards_to_async_callback_and_caches_persisted
     assert client.last_map is persisted  # a later map-less status keeps it
 
 
-def _job_map(*, report: bool, job_started: int) -> VacuumMap:
+def _job_map(*, report: bool, job_started: int | None) -> VacuumMap:
     vacuum_map = _persisted_map()
     vacuum_map.report = report
     vacuum_map.job_started = job_started
@@ -867,6 +867,18 @@ async def test_requested_map_does_not_replace_the_report_of_the_same_job():
         VacuumStatus(mode=VacuumMode.DOCKED, map=_job_map(report=False, job_started=100))
     )
     assert client.last_map is report  # keeps the event log
+
+
+async def test_requested_map_without_a_valid_job_start_keeps_the_report():
+    client = _make_vacuum_client_with_mocks()
+    client.on_status_update(lambda s: None)
+    report = _job_map(report=True, job_started=1790503168)
+    await client._on_monitor_status(VacuumStatus(mode=VacuumMode.DOCKED, map=report))
+    await client._on_monitor_status(
+        VacuumStatus(mode=VacuumMode.DOCKED, map=_job_map(report=False, job_started=None))
+    )
+
+    assert client.last_map is report
 
 
 async def test_requested_map_of_a_newer_job_replaces_the_report():

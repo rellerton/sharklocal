@@ -13,6 +13,26 @@ from typing import Any, Dict, List, Optional
 # room the last job cleaned, until another room definition replaces it.
 SPOT_ROOM_NAME = "PinDrop"
 
+# PbMapSummary.beginTime is Unix epoch seconds when it describes a completed
+# job. Some saved-map replies instead carry small counters in that field (19
+# was observed after a robot restart). Keep those placeholders from becoming
+# 1970 timestamps or identifying a fictitious newer job. The upper bound also
+# avoids platform-specific failures when consumers convert corrupt values to a
+# datetime.
+MIN_JOB_START_EPOCH = 946684800  # 2000-01-01T00:00:00Z
+MAX_JOB_START_EPOCH = 4102444800  # 2100-01-01T00:00:00Z
+
+
+def normalize_job_started(value: Any) -> Optional[int]:
+    """Return a plausible job-start epoch, otherwise ``None``."""
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and MIN_JOB_START_EPOCH <= value < MAX_JOB_START_EPOCH
+    ):
+        return value
+    return None
+
 
 class VacuumMode(str, Enum):
     """Normalized operating modes across all transports."""
@@ -305,7 +325,7 @@ class VacuumMap:
                 for f in data.get("features", [])
             ],
             log=[VacuumLogEntry(**e) for e in data.get("log", [])],
-            job_started=data.get("job_started"),
+            job_started=normalize_job_started(data.get("job_started")),
             job_minutes=data.get("job_minutes"),
         )
 
